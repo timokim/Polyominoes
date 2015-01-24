@@ -1,0 +1,235 @@
+;; The first three lines of this file were inserted by DrRacket. They record metadata
+;; about the language level of this file in a form that our tools can easily process.
+#reader(lib "htdp-intermediate-lambda-reader.ss" "lang")((modname polyominoes2) (read-case-sensitive #t) (teachpacks ()) (htdp-settings #(#t constructor repeating-decimal #f #t none #f ())))
+(require "a10.rkt")
+(require "kanoodle.rkt")
+
+;; A Grid is a (ne-listof (ne-listof Character))
+
+;; A Pos is a (make-pos Int Int)
+(define-struct pos (x y))
+
+;; A State is a (make-state Grid (listof Grid))
+(define-struct state (puzzle pieces))
+
+
+;; Question 1a
+(define (build-2dlist width height function)
+  (build-list height (lambda (x) (build-list width (lambda (y) (function y x))))))
+
+;; Question 1b
+(define (all-positions width height)
+  (foldr (lambda (x y) (append x y)) empty (build-2dlist width height make-pos)))
+
+
+;; Question 2
+
+(define Ori-A (list (list #\a #\a)
+                    (list #\a #\a)
+                    (list #\a #\.)))
+
+(define Ori-B (list (list #\0 #\0 #\0)
+                    (list #\. #\0 #\.)
+                    (list #\. #\0 #\.)))
+
+(define Ori-C (list (list #\0 #\0)
+                    (list #\0 #\0)
+                    (list #\0 #\0)))
+
+(define Ori-D (list (list #\. #\0 #\.)
+                    (list #\0 #\0 #\0)
+                    (list #\. #\0 #\.)))
+
+(define (transpose mat)
+  (cond
+    [(empty? (first mat)) empty]
+    [else (cons (map first mat)
+                (transpose (map rest mat)))]))
+
+(define (all-orientations Polyno)
+  (local
+    [(define (remove-duplicates lst)
+       (local [(define (filter-rest a-grid lst)
+                 (filter (lambda (x) 
+                           (not (equal? a-grid x))) lst))]
+         (foldr (lambda (x y) 
+                  (cons x (filter-rest x y))) empty lst)))]
+    (remove-duplicates
+     (list Polyno (transpose Polyno) (reverse Polyno)
+           (reverse (transpose Polyno)) (map reverse (reverse Polyno))
+           (map reverse Polyno) (map reverse (transpose Polyno))
+           (map reverse (reverse (transpose Polyno)))))))
+
+;; Question 3
+
+(define (grid-get x y a-Grid)
+  (cond
+    [(and (zero? x) (zero? y)) (first (first a-Grid))]
+    [(zero? x) (grid-get 0 (sub1 y) (rest a-Grid))]
+    [else (grid-get (sub1 x) y (map rest a-Grid))]))
+
+(define (first-empty-pos a-Grid)
+  (foldr (lambda (posa posb)
+           (cond
+             [(char=? #\. (grid-get (pos-x posa) (pos-y posa) a-Grid))
+              posa]
+             [else posb]))
+         false (all-positions (length (first a-Grid)) (length a-Grid))))
+
+;; Question 4
+
+(define (top-shift base top offset)
+  (build-2dlist (length (first base)) 
+                (length base)
+                (lambda (x y)
+                  (cond
+                    [(or (>= (- x (pos-x offset)) (length (first top)))
+                         (< (- x (pos-x offset)) 0)
+                         (>= (- y (pos-y offset)) (length top))
+                         (< (- y (pos-y offset)) 0))
+                     #\.]
+                    [else (grid-get (- x (pos-x offset))
+                                    (- y (pos-y offset))
+                                    top)]))))
+
+(top-shift (build-2dlist 5 3 (lambda (x y) #\.)) Ori-A (make-pos 2 0))
+
+(define (superimpose base top offset)
+  (local
+    [(define (determining posx posy)
+       (cond
+         [(char=? (grid-get posx posy (top-shift base top offset)) #\.)
+          (grid-get posx posy base)]
+         [else (grid-get posx posy (top-shift base top offset))]))]
+    (build-2dlist (length (first base)) 
+                  (length base)
+                  (lambda (x y) (determining x y)))))
+
+;; Question 5
+
+
+
+(define (blocksize a-Grid)
+  (length (filter (lambda (apos) (not (char=? (grid-get (pos-x apos)
+                                                        (pos-y apos)
+                                                        a-Grid) #\.)))
+                  (all-positions (length (first a-Grid))
+                                 (length a-Grid)))))
+
+(define (superimposable? a-Grid Polyno offset)
+  (cond
+    [(or (not (= (blocksize (superimpose a-Grid Polyno offset))
+                 (+ (blocksize a-Grid) (blocksize Polyno))))
+         (char=? #\. (grid-get (pos-x (first-empty-pos a-Grid))
+                               (pos-y (first-empty-pos a-Grid))
+                               (superimpose a-Grid Polyno offset))))
+     false]
+    [else true]))
+
+(define rand3om (list (list #\A #\A #\B #\B #\. #\.)
+                      (list #\A #\A #\A #\. #\. #\.)
+                      (list #\. #\A #\C #\. #\. #\.)
+                      (list #\. #\. #\C #\C #\. #\.)
+                      (list #\. #\. #\C #\. #\. #\.)))
+
+
+(define (legal-offset a-Grid Polyno)
+  (filter (lambda (offset) (superimposable? a-Grid Polyno offset))
+          (all-positions (length (first a-Grid)) (length a-Grid))))
+
+(define (same-piece? piece1 piece2)
+  (lists-equiv? (all-orientations piece1)
+                (all-orientations piece2)))
+
+
+
+(define (neighbours state)
+  (foldr 
+   (lambda (x y) 
+     (cond
+       [(empty? (legal-offset (state-puzzle state) x)) y]
+       [else (cons 
+              (make-state (superimpose 
+                           (state-puzzle state)
+                           x
+                           (first (legal-offset (state-puzzle state) x)))
+                          (filter (lambda (z) (not (same-piece? x z)))
+                                  (state-pieces state))) y)]))
+   empty (foldr (lambda (x y) (append (all-orientations x) y)) 
+                empty (state-pieces state))))
+
+
+
+
+
+(define weirdddd (make-state rand3om (list '((#\j #\j))
+                                           '((#\b #\b #\.)
+                                             (#\. #\b #\b)))))
+;; if there is at least one place where it's both NOT #\.
+
+
+
+
+;; this should be false because it falls outside of boundary...
+;; find all cases where it's false.
+
+
+;; solve-puzzle: Grid (listof Grid) Symbol -> (union (listof String) false)
+;; Solve a polyomino puzzle, given the initial empty (or partially filled 
+;; in) grid, a set of pieces that must be placed, and a Symbol indicating
+;; what visualization style to use.  Legal viz styles are 'interactive
+;; (draw every step of the search), 'at-end (just draw the solution, if one
+;; is found), or 'offline (don't draw anything).  Produce either the solved
+;; Grid (converted to a list of Strings, just for convenience) or false if
+;; no solution exists.
+;;
+;; You don't need to modify this function at all.  It is provided for you
+;; so that you can test your puzzle solving algorithm interactively.  If
+;; you decide you want to write check-expect tests using solve-puzzle
+;; (which you don't have to do, but can if you want), be sure to pass in
+;; 'offline for viz-style.
+
+;; Examples:
+;; (The examples are not provided in check-expect form.  They're meant to
+;; demonstrate typical uses of the function, but we don't want to them to
+;; open interactive visualizations every time you start the program.)
+
+;; Solve offline (i.e. work like a normal Scheme function).
+;(solve-puzzle
+;  (strlist->grid '("...." "...." "...." "...." "...." "...."))
+;  (cons '((#\L #\L) (#\. #\L)) (cons '((#\O)) tetrominoes-uc))
+;  'offline)
+
+;; Display the result graphically, if a solution is found.
+;(solve-puzzle
+;  (strlist->grid '("...." "...." "...." "...." "...." "...."))
+;  (cons '((#\L #\L) (#\. #\L)) (cons '((#\O)) tetrominoes-uc))
+;  'at-end)
+
+;; Display every step of the search as it progresses.
+;(solve-puzzle
+;  (strlist->grid '("...." "...." "...." "...." "...." "...."))
+;  (cons '((#\L #\L) (#\. #\L)) (cons '((#\O)) tetrominoes-uc))
+;  'interactive)
+
+(define (solve-puzzle grid polys viz-style)
+  (local
+    [(define result
+       (search 
+        (lambda (S) (empty? (state-pieces S)))
+        neighbours
+        (cond
+          [(symbol=? viz-style 'interactive)
+           (lambda (S) (draw-grid (state-puzzle S)))]
+          [else false])
+        (make-state grid polys)))
+     
+     (define maybe-last-draw
+       (cond
+         [(and (state? result)
+               (symbol=? viz-style 'at-end))
+          (draw-grid (state-puzzle result))]
+         [else false]))]
+    (cond
+      [(boolean? result) result]
+      [else (map list->string (state-puzzle result))])))
